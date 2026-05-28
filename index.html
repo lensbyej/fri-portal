@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#000000" />
+    <title>FRI Portal</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-glow" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <button class="brand-lockup" id="homeButton" type="button" aria-label="Open staff lookup">
+        <img src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
+        <span>FRI Portal</span>
+      </button>
+      <nav class="top-actions" aria-label="Portal navigation">
+        <button class="ghost-button" id="staffLookupButton" type="button">Staff Lookup</button>
+        <button class="accent-button" id="leadershipButton" type="button">Leadership</button>
+      </nav>
+    </header>
+
+    <main id="app" class="app">
+      <section class="portal-screen active" id="lookupScreen" aria-labelledby="lookupTitle">
+        <div class="lookup-wrap">
+          <img class="hero-logo" src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
+          <div class="lookup-copy">
+            <p class="eyebrow">First Response Interactive</p>
+            <h1 id="lookupTitle">FRI Portal</h1>
+            <p>
+              Staff records, activity, documents, payouts, and acknowledgements in one secure
+              operations portal.
+            </p>
+          </div>
+
+          <form class="lookup-form" id="lookupForm">
+            <label class="sr-only" for="usernameSearch">Enter Username</label>
+            <input id="usernameSearch" name="username" placeholder="Enter Username" autocomplete="off" />
+            <button type="submit" aria-label="Search staff profile">
+              <span>Search</span>
+            </button>
+          </form>
+
+          <form class="pin-panel hidden" id="pinForm">
+            <div>
+              <p class="eyebrow">Profile Found</p>
+              <h2>Enter PIN</h2>
+            </div>
+            <label class="sr-only" for="pinInput">Enter PIN</label>
+            <input
+              id="pinInput"
+              name="pin"
+              inputmode="numeric"
+              maxlength="4"
+              pattern="[0-9]{4}"
+              placeholder="Enter PIN"
+              autocomplete="one-time-code"
+            />
+            <button class="accent-button" type="submit">Submit PIN</button>
+          </form>
+
+          <p class="lookup-message" id="lookupMessage" role="status"></p>
+        </div>
+      </section>
+
+      <section class="portal-screen" id="profileScreen" aria-labelledby="profileTitle">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">Staff Profile</p>
+            <h1 id="profileTitle">Profile</h1>
+          </div>
+          <button class="ghost-button" id="profileSignOutButton" type="button">Exit Profile</button>
+        </div>
+        <div id="profileContent"></div>
+      </section>
+
+      <section class="portal-screen" id="leadershipLoginScreen" aria-labelledby="leadershipLoginTitle">
+        <div class="login-shell">
+          <div class="login-brand">
+            <img src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
+            <p class="eyebrow">Leadership Access</p>
+            <h1 id="leadershipLoginTitle">Operations Dashboard</h1>
+            <p>Authenticate with a leadership account to manage staff, contractors, activity, documents, and reports.</p>
+          </div>
+          <form class="login-card" id="leadershipLoginForm">
+            <label for="leadershipEmail">Email</label>
+            <input id="leadershipEmail" name="email" type="email" autocomplete="email" required />
+            <label for="leadershipPassword">Password</label>
+            <input id="leadershipPassword" name="password" type="password" autocomplete="current-password" required />
+            <button class="accent-button" type="submit">Sign In</button>
+            <p class="form-message" id="leadershipLoginMessage" role="status"></p>
+          </form>
+        </div>
+      </section>
+
+      <section class="portal-screen" id="leadershipScreen" aria-labelledby="leadershipTitle">
+        <aside class="sidebar">
+          <img src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
+          <p class="eyebrow">Leadership</p>
+          <nav id="leadershipNav" aria-label="Leadership dashboard sections"></nav>
+          <button class="ghost-button full" id="leadershipSignOutButton" type="button">Sign Out</button>
+        </aside>
+        <div class="leadership-main">
+          <div class="screen-head tight">
+            <div>
+              <p class="eyebrow">FRI Command Center</p>
+              <h1 id="leadershipTitle">Dashboard</h1>
+            </div>
+            <div class="connection-pill" id="connectionStatus">Supabase Key Missing</div>
+          </div>
+          <div id="leadershipContent"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Use for official First Response Interactive business only. Copyright First Response Interactive 2026
+    </footer>
+
+    <div class="modal-host hidden" id="modalHost" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-backdrop" data-close-modal></div>
+      <section class="modal-card">
+        <div class="modal-head">
+          <h2 id="modalTitle"></h2>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close modal">x</button>
+        </div>
+        <div id="modalBody"></div>
+      </section>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
