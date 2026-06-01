@@ -9,13 +9,14 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const publishableKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const terminalPin = Deno.env.get("TERMINAL_PIN") ?? "3838";
 
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
 type Actor = {
-  type: "leadership" | "staff";
+  type: "leadership" | "staff" | "terminal";
   userId?: string;
   profileId?: string;
   name: string;
@@ -30,6 +31,9 @@ Deno.serve(async (request) => {
     const body = await request.json();
     const actor = await requireActor(request, body);
 
+    if (body.action === "unlock") {
+      return json(await unlockTerminal(actor));
+    }
     if (body.action === "submit") {
       return json(await submitCommand(actor, String(body.command ?? "")));
     }
@@ -44,6 +48,8 @@ Deno.serve(async (request) => {
 });
 
 async function requireActor(request: Request, body: Record<string, unknown>): Promise<Actor> {
+  requireTerminalPin(body);
+
   const authorization = request.headers.get("Authorization");
   if (authorization) {
     const userClient = createClient(supabaseUrl, publishableKey, {
@@ -71,7 +77,11 @@ async function requireActor(request: Request, body: Record<string, unknown>): Pr
 
   const profileId = String(body.profileId ?? "");
   const sessionToken = String(body.sessionToken ?? "");
-  if (!profileId || !sessionToken) throw new Error("Leadership or staff session required");
+  if (!profileId || !sessionToken) {
+    const operatorName = String(body.operatorName ?? "").trim();
+    if (!operatorName) throw new Error("Operator name required");
+    return { type: "terminal", name: operatorName.slice(0, 80) };
+  }
 
   const tokenHash = await sha256Hex(sessionToken);
   const { data: session, error: sessionError } = await admin
@@ -95,6 +105,30 @@ async function requireActor(request: Request, body: Record<string, unknown>): Pr
   }
 
   return { type: "staff", profileId, name: profile.full_name || "Staff" };
+}
+
+function requireTerminalPin(body: Record<string, unknown>) {
+  const providedPin = String(body.terminalPin ?? "");
+  if (providedPin !== terminalPin) throw new Error("Invalid Terminal PIN");
+}
+
+async function unlockTerminal(actor: Actor) {
+  await Promise.all([
+    admin.from("terminal_logs").insert({
+      level: "info",
+      message: `${actor.name} unlocked Terminal`,
+    }),
+    admin.from("audit_logs").insert({
+      actor_user_id: actor.userId ?? null,
+      profile_id: actor.profileId ?? null,
+      action: "terminal_unlocked",
+      target_table: "terminal",
+      target_id: null,
+      details: { actor_type: actor.type, actor_name: actor.name },
+    }),
+  ]);
+
+  return { ok: true, actorType: actor.type, actorName: actor.name };
 }
 
 async function submitCommand(actor: Actor, rawCommand: string) {

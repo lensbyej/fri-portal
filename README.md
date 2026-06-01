@@ -51,12 +51,15 @@ The public staff lookup uses Edge Functions for PIN verification so PIN hashes s
 The Leadership and staff profile screens include an Outbound Terminal for Roblox moderation commands:
 
 ```text
+/cmds
 /ban RobloxUsername optional reason
 /kick RobloxUsername optional reason
 /unban RobloxUsername optional reason
 ```
 
-`terminal-command` validates the leadership auth session or staff PIN session, writes the command to Supabase, and records audit logs. `roblox-terminal` is called by Roblox servers with `x-outbound-engine-key`; it polls pending commands, checks active bans, and stores command acknowledgements.
+The Terminal is PIN locked with the internal Terminal PIN. Successful unlocks are written to `terminal_logs` and `audit_logs`. The standalone Terminal is available at `/terminal`; `vercel.json` rewrites that path to the single-page app.
+
+`terminal-command` validates the Terminal PIN plus the leadership auth session, staff PIN session, or standalone operator name, writes the command to Supabase, and records audit logs. `roblox-terminal` is called by Roblox servers with `x-outbound-engine-key`; it polls pending commands, checks active bans, and stores command acknowledgements.
 
 Place `roblox/OutboundEngineTerminal.server.lua` in Roblox `ServerScriptService`, enable HTTP requests in Game Settings, and set `ENGINE_API_KEY` in that script to the private Outbound engine key configured for this project. The key is verified by hash through `portal_settings.key = 'terminal_engine'`, so the plaintext key is not stored in browser code or committed source.
 

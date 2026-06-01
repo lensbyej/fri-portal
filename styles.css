@@ -1085,28 +1085,10 @@ textarea:focus {
   font-weight: 600;
 }
 
-.terminal-dots {
-  display: inline-flex;
-  gap: 6px;
-}
-
-.terminal-dots span {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: #64748b;
-}
-
-.terminal-dots span:nth-child(1) {
-  background: #ef4444;
-}
-
-.terminal-dots span:nth-child(2) {
-  background: #f59e0b;
-}
-
-.terminal-dots span:nth-child(3) {
-  background: #22c55e;
+.terminal-titlebar span {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 0.74rem;
 }
 
 .terminal-output {
@@ -1173,6 +1155,30 @@ textarea:focus {
   color: var(--accent-contrast);
   background: var(--orange);
   font-weight: 600;
+}
+
+.terminal-lock-card {
+  padding: 0;
+}
+
+.terminal-unlock-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 18px;
+}
+
+.terminal-unlock-form label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.terminal-unlock-form .form-message {
+  grid-column: 1 / -1;
 }
 
 .moderation-history {
@@ -1688,6 +1694,10 @@ canvas {
   }
 
   .terminal-input-row {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-unlock-form {
     grid-template-columns: 1fr;
   }
 

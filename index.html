@@ -17,6 +17,7 @@
       </button>
       <nav class="top-actions" aria-label="Portal navigation">
         <button class="ghost-button" id="staffLookupButton" type="button">Staff Lookup</button>
+        <button class="ghost-button" id="terminalButton" type="button">Terminal</button>
         <button class="accent-button" id="leadershipButton" type="button">Leadership</button>
       </nav>
     </header>
@@ -91,6 +92,17 @@
             <p class="form-message" id="leadershipLoginMessage" role="status"></p>
           </form>
         </div>
+      </section>
+
+      <section class="portal-screen" id="terminalScreen" aria-labelledby="standaloneTerminalTitle">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">Outbound Command Center</p>
+            <h1 id="standaloneTerminalTitle">Terminal</h1>
+          </div>
+          <button class="ghost-button" type="button" data-action="terminal-home">Staff Lookup</button>
+        </div>
+        <div id="standaloneTerminalContent"></div>
       </section>
 
       <section class="portal-screen" id="leadershipScreen" aria-labelledby="leadershipTitle">

@@ -61,6 +61,11 @@
     robloxLoading: false,
     sidebarOpen: true,
     terminalLoading: false,
+    terminalAccess: {
+      leadership: null,
+      staff: null,
+      standalone: null,
+    },
     timer: null,
     searchTerm: "",
     filterStatus: "all",
@@ -94,7 +99,7 @@
     if (state.backend === "unconfigured") {
       $("#lookupMessage").textContent = "Supabase is not connected. Add the project publishable key in config.js.";
     }
-    showScreen("lookupScreen");
+    handleRoute();
     startTimerLoop();
   }
 
@@ -127,6 +132,7 @@
   function bindGlobalEvents() {
     $("#homeButton").addEventListener("click", () => showLookup());
     $("#staffLookupButton").addEventListener("click", () => showLookup());
+    $("#terminalButton").addEventListener("click", () => showStandaloneTerminal());
     $("#leadershipButton").addEventListener("click", () => showLeadershipLogin());
     $("#profileSignOutButton").addEventListener("click", () => showLookup());
     $("#leadershipSignOutButton").addEventListener("click", leadershipSignOut);
@@ -141,6 +147,7 @@
     document.addEventListener("click", handleActionClick);
     document.addEventListener("change", handleInputChange);
     document.addEventListener("submit", handleDynamicSubmit);
+    window.addEventListener("popstate", handleRoute);
   }
 
   function startTimerLoop() {
@@ -155,19 +162,49 @@
     $$(".portal-screen").forEach((screen) => screen.classList.toggle("active", screen.id === screenId));
   }
 
-  function showLookup() {
+  function handleRoute() {
+    if (window.location.pathname.replace(/\/+$/, "") === "/terminal") {
+      showStandaloneTerminal(false);
+      return;
+    }
+    showLookup(false);
+  }
+
+  function showLookup(updateUrl = true) {
     state.lookupCandidate = null;
     state.currentProfile = null;
     state.profileContext = null;
     state.staffSessionToken = null;
+    state.terminalAccess.staff = null;
     $("#usernameSearch").value = "";
     $("#pinInput").value = "";
     $("#pinForm").classList.add("hidden");
     $("#lookupMessage").textContent = "";
+    if (updateUrl && window.location.pathname !== "/") {
+      window.history.pushState({}, "", "/");
+    }
     showScreen("lookupScreen");
   }
 
-  function showLeadershipLogin() {
+  function showStandaloneTerminal(updateUrl = true) {
+    if (updateUrl && window.location.pathname !== "/terminal") {
+      window.history.pushState({}, "", "/terminal");
+    }
+    state.currentProfile = null;
+    state.profileContext = null;
+    renderStandaloneTerminal();
+    showScreen("terminalScreen");
+  }
+
+  function renderStandaloneTerminal() {
+    $("#standaloneTerminalContent").innerHTML = terminalPanel("standalone");
+    if (isTerminalUnlocked("standalone")) loadTerminalHistory("standalone");
+  }
+
+  function showLeadershipLogin(updateUrl = true) {
+    if (updateUrl && window.location.pathname === "/terminal") {
+      window.history.pushState({}, "", "/");
+    }
     if (state.leadershipUser) {
       renderLeadership();
       showScreen("leadershipScreen");
@@ -257,6 +294,7 @@
       await state.supabase.auth.signOut();
     }
     state.leadershipUser = null;
+    state.terminalAccess.leadership = null;
     showLeadershipLogin();
   }
 
@@ -484,7 +522,7 @@
         </div>
       </div>
     `;
-    loadTerminalHistory("staff");
+    if (isTerminalUnlocked("staff")) loadTerminalHistory("staff");
   }
 
   function updateProfileTimer() {
@@ -873,14 +911,18 @@
 
   function renderTerminalManagement() {
     $("#leadershipContent").innerHTML = terminalPanel("leadership");
-    loadTerminalHistory("leadership");
+    if (isTerminalUnlocked("leadership")) loadTerminalHistory("leadership");
   }
 
   function terminalPanel(scope) {
-    const title = scope === "staff" ? "Terminal" : "Outbound Terminal";
+    if (!isTerminalUnlocked(scope)) return terminalLockPanel(scope);
+
+    const title = scope === "staff" ? "Terminal" : scope === "standalone" ? "Outbound Terminal" : "Outbound Terminal";
     const subtitle =
       scope === "staff"
         ? "Run Roblox moderation commands from your staff session."
+        : scope === "standalone"
+          ? "Run Roblox moderation commands from the standalone Terminal page."
         : "Run Roblox moderation commands and monitor server acknowledgements.";
     return `
       <section class="card terminal-card">
@@ -893,8 +935,8 @@
         </div>
         <div class="terminal-window" data-terminal-scope="${scope}">
           <div class="terminal-titlebar">
-            <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
             <strong>outbound-terminal</strong>
+            <span>${escapeHtml(terminalActorLabel(scope))}</span>
           </div>
           <div class="terminal-output" id="${scope}TerminalOutput">
             ${terminalHistoryMarkup(scope)}
@@ -902,13 +944,49 @@
           <form class="terminal-input-row" id="${scope}TerminalForm" data-terminal-scope="${scope}">
             <span class="terminal-prompt">outbound%</span>
             <label class="sr-only" for="${scope}TerminalInput">Terminal command</label>
-            <input id="${scope}TerminalInput" name="command" placeholder="/ban, /kick, or /unban RobloxUsername" autocomplete="off" />
+            <input id="${scope}TerminalInput" name="command" placeholder="/cmds, /ban, /kick, or /unban RobloxUsername" autocomplete="off" />
             <button class="terminal-run-button" type="submit">Run</button>
           </form>
         </div>
         ${terminalModerationHistoryMarkup(scope)}
       </section>
     `;
+  }
+
+  function terminalLockPanel(scope) {
+    const isStandalone = scope === "standalone";
+    return `
+      <section class="card terminal-card terminal-lock-card">
+        <div class="section-title">
+          <div>
+            <h2>${isStandalone ? "Outbound Terminal" : "Terminal Locked"}</h2>
+            <p>Enter the Terminal PIN to unlock moderation commands.</p>
+          </div>
+        </div>
+        <form class="terminal-unlock-form" data-terminal-scope="${scope}">
+          ${
+            isStandalone
+              ? `<label>Operator Name<input name="operatorName" placeholder="Enter your name" autocomplete="name" required /></label>`
+              : ""
+          }
+          <label>Terminal PIN<input name="terminalPin" type="password" inputmode="numeric" maxlength="4" placeholder="Enter PIN" autocomplete="one-time-code" required /></label>
+          <button class="accent-button" type="submit">Unlock Terminal</button>
+          <p class="form-message" id="${scope}TerminalUnlockMessage" role="status"></p>
+        </form>
+      </section>
+    `;
+  }
+
+  function isTerminalUnlocked(scope) {
+    return Boolean(state.terminalAccess?.[scope]?.pin);
+  }
+
+  function terminalActorLabel(scope) {
+    const access = state.terminalAccess?.[scope];
+    if (access?.operatorName) return access.operatorName;
+    if (scope === "staff" && state.currentProfile) return state.currentProfile.fullName || state.currentProfile.username || "Staff";
+    if (scope === "leadership" && state.leadershipUser) return state.leadershipUser.name || state.leadershipUser.email || "Leadership";
+    return "PIN session";
   }
 
   function terminalHistoryMarkup(scope) {
@@ -925,7 +1003,7 @@
       }
       return `
         <div class="terminal-line muted"><span>Outbound Terminal ready.</span></div>
-        <div class="terminal-line muted"><span>Allowed commands: /ban, /kick, /unban RobloxUsername</span></div>
+        <div class="terminal-line muted"><span>Type /cmds to view available commands.</span></div>
       `;
     }
     const commandMarkup = commands
@@ -1008,6 +1086,7 @@
 
   async function loadTerminalHistory(scope) {
     if (!state.data) return;
+    if (!isTerminalUnlocked(scope)) return;
     if (state.backend !== "supabase") {
       updateTerminalOutput(scope);
       return;
@@ -1017,6 +1096,7 @@
     updateTerminalOutput(scope);
     try {
       const body = { action: "history" };
+      addTerminalAccessPayload(body, scope);
       if (scope === "staff" && state.currentProfile) {
         Object.assign(body, { profileId: state.currentProfile.id, sessionToken: state.staffSessionToken });
       }
@@ -1041,9 +1121,19 @@
   }
 
   async function submitTerminalCommand(scope) {
+    if (!isTerminalUnlocked(scope)) {
+      rerenderTerminalPanel(scope);
+      return;
+    }
     const input = $(`#${scope}TerminalInput`);
     const command = input?.value.trim() || "";
     if (!command) return;
+
+    if (/^\/cmds$/i.test(command)) {
+      if (input) input.value = "";
+      showTerminalCommands(scope);
+      return;
+    }
 
     const parsed = parseTerminalCommand(command);
     if (!parsed) {
@@ -1057,6 +1147,7 @@
     try {
       if (state.backend === "supabase") {
         const body = { action: "submit", command };
+        addTerminalAccessPayload(body, scope);
         if (scope === "staff" && state.currentProfile) {
           Object.assign(body, { profileId: state.currentProfile.id, sessionToken: state.staffSessionToken });
         }
@@ -1099,6 +1190,76 @@
     const match = command.trim().match(/^\/(ban|kick|unban)\s+([A-Za-z0-9_]{3,20})(?:\s+(.{1,240}))?$/i);
     if (!match) return null;
     return { action: match[1].toLowerCase(), username: match[2], reason: match[3]?.trim() || "" };
+  }
+
+  async function unlockTerminal(scope) {
+    const form = $(`.terminal-unlock-form[data-terminal-scope="${scope}"]`);
+    if (!form) return;
+    const formData = new FormData(form);
+    const pin = String(formData.get("terminalPin") || "").trim();
+    const operatorName = String(formData.get("operatorName") || "").trim();
+    const message = $(`#${scope}TerminalUnlockMessage`);
+
+    try {
+      if (!pin) throw new Error("Terminal PIN required");
+      if (scope === "standalone" && !operatorName) throw new Error("Operator name required");
+
+      if (state.backend === "supabase") {
+        const body = { action: "unlock", terminalPin: pin };
+        if (scope === "standalone") body.operatorName = operatorName;
+        if (scope === "staff" && state.currentProfile) {
+          Object.assign(body, { profileId: state.currentProfile.id, sessionToken: state.staffSessionToken });
+        }
+        const { data, error } = await state.supabase.functions.invoke("terminal-command", { body });
+        if (error) throw error;
+        state.terminalAccess[scope] = {
+          pin,
+          operatorName: data?.actorName || operatorName || terminalActorLabel(scope),
+          unlockedAt: new Date().toISOString(),
+        };
+      } else {
+        if (pin !== "3838") throw new Error("Invalid Terminal PIN");
+        state.terminalAccess[scope] = {
+          pin,
+          operatorName: operatorName || terminalActorLabel(scope),
+          unlockedAt: new Date().toISOString(),
+        };
+        pushLocalTerminalLog(`${state.terminalAccess[scope].operatorName} unlocked Terminal`, "info");
+        logAudit("terminal_unlocked", "terminal", `${state.terminalAccess[scope].operatorName} unlocked Terminal`);
+      }
+
+      rerenderTerminalPanel(scope);
+      await loadTerminalHistory(scope);
+    } catch (error) {
+      if (message) message.textContent = cleanError(error);
+    }
+  }
+
+  function addTerminalAccessPayload(body, scope) {
+    const access = state.terminalAccess?.[scope] || {};
+    body.terminalPin = access.pin || "";
+    if (scope === "standalone") {
+      body.operatorName = access.operatorName || "";
+    }
+  }
+
+  function rerenderTerminalPanel(scope) {
+    if (scope === "leadership") {
+      renderTerminalManagement();
+      return;
+    }
+    if (scope === "standalone") {
+      renderStandaloneTerminal();
+      return;
+    }
+    if (scope === "staff") {
+      renderProfile();
+    }
+  }
+
+  function showTerminalCommands(scope) {
+    pushLocalTerminalLog("Available commands: /ban RobloxUsername [reason] | /kick RobloxUsername [reason] | /unban RobloxUsername [reason] | /cmds", "info");
+    updateTerminalOutput(scope);
   }
 
   function pushLocalTerminalLog(message, level = "info") {
@@ -1485,6 +1646,7 @@
     if (action === "refresh-roblox") return refreshRobloxStatus();
     if (action === "refresh-terminal") return loadTerminalHistory(trigger.dataset.scope || "leadership");
     if (action === "submit-terminal") return submitTerminalCommand(trigger.dataset.scope || "leadership");
+    if (action === "terminal-home") return showLookup();
     if (action === "start-activity") return startActivity();
     if (action === "end-activity") return endActivity();
     if (action === "open-document") return openDocument(id);
@@ -1528,6 +1690,10 @@
     if (form.matches(".terminal-input-row")) {
       event.preventDefault();
       submitTerminalCommand(form.dataset.terminalScope || "leadership");
+    }
+    if (form.matches(".terminal-unlock-form")) {
+      event.preventDefault();
+      unlockTerminal(form.dataset.terminalScope || "leadership");
     }
   }
 

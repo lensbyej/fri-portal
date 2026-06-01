@@ -231,6 +231,10 @@ task.spawn(function()
 	print("[Outbound Engine] API URL: " .. API_URL)
 	print("[Outbound Engine] HTTP Requests must be enabled in Game Settings > Security")
 
+	if ENGINE_API_KEY == "" or ENGINE_API_KEY == "SET_THIS_TO_OUTBOUND_ENGINE_KEY" then
+		warn("[Outbound Engine] ENGINE_API_KEY is not configured. Paste the private Outbound engine key into this script.")
+	end
+
 	refreshBanList()
 
 	for _, player in ipairs(Players:GetPlayers()) do
