@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#000000" />
-    <title>FRI Portal</title>
+    <meta name="theme-color" content="#ededed" />
+    <title>Outbound</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -12,8 +12,8 @@
 
     <header class="topbar">
       <button class="brand-lockup" id="homeButton" type="button" aria-label="Open staff lookup">
-        <img src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
-        <span>FRI Portal</span>
+        <img src="assets/outbound-logo.png" alt="Outbound" />
+        <span>Outbound</span>
       </button>
       <nav class="top-actions" aria-label="Portal navigation">
         <button class="ghost-button" id="staffLookupButton" type="button">Staff Lookup</button>
@@ -24,13 +24,12 @@
     <main id="app" class="app">
       <section class="portal-screen active" id="lookupScreen" aria-labelledby="lookupTitle">
         <div class="lookup-wrap">
-          <img class="hero-logo" src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
+          <img class="hero-logo" src="assets/outbound-logo.png" alt="Outbound" />
           <div class="lookup-copy">
-            <p class="eyebrow">First Response Interactive</p>
-            <h1 id="lookupTitle">FRI Portal</h1>
+            <p class="eyebrow">Outbound Operations</p>
+            <h1 id="lookupTitle">Outbound</h1>
             <p>
-              Staff records, activity, documents, payouts, and acknowledgements in one secure
-              operations portal.
+              The official staff portal for profiles, activity, documents, acknowledgements, and Roblox operations.
             </p>
           </div>
 
@@ -78,10 +77,10 @@
       <section class="portal-screen" id="leadershipLoginScreen" aria-labelledby="leadershipLoginTitle">
         <div class="login-shell">
           <div class="login-brand">
-            <img src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
+            <img src="assets/outbound-logo.png" alt="Outbound" />
             <p class="eyebrow">Leadership Access</p>
             <h1 id="leadershipLoginTitle">Operations Dashboard</h1>
-            <p>Authenticate with a leadership account to manage staff, contractors, activity, documents, and reports.</p>
+            <p>Authenticate with a leadership account to manage staff, activity, documents, and Roblox operations.</p>
           </div>
           <form class="login-card" id="leadershipLoginForm">
             <label for="leadershipEmail">Email</label>
@@ -96,7 +95,7 @@
 
       <section class="portal-screen" id="leadershipScreen" aria-labelledby="leadershipTitle">
         <aside class="sidebar">
-          <img src="assets/summer-26-logo.png" alt="Summer '26 Content Drop" />
+          <img src="assets/outbound-logo.png" alt="Outbound" />
           <p class="eyebrow">Leadership</p>
           <nav id="leadershipNav" aria-label="Leadership dashboard sections"></nav>
           <button class="ghost-button full" id="leadershipSignOutButton" type="button">Sign Out</button>
@@ -104,10 +103,12 @@
         <div class="leadership-main">
           <div class="screen-head tight">
             <div>
-              <p class="eyebrow">FRI Command Center</p>
+              <p class="eyebrow">First Response Interactive</p>
               <h1 id="leadershipTitle">Dashboard</h1>
             </div>
-            <div class="connection-pill" id="connectionStatus">Supabase Key Missing</div>
+            <button class="icon-button sidebar-toggle" id="sidebarToggleButton" type="button" aria-label="Toggle side menu" aria-expanded="true">
+              <span aria-hidden="true">Menu</span>
+            </button>
           </div>
           <div id="leadershipContent"></div>
         </div>
@@ -115,7 +116,7 @@
     </main>
 
     <footer class="footer">
-      Use for official First Response Interactive business only. Copyright First Response Interactive 2026
+      Use for official Outbound business only. Copyright Outbound 2026
     </footer>
 
     <div class="modal-host hidden" id="modalHost" role="dialog" aria-modal="true" aria-labelledby="modalTitle">

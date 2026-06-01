@@ -1,4 +1,4 @@
--- FRI Portal Supabase schema
+-- Outbound Portal Supabase schema
 -- Run in the Supabase SQL editor or through a reviewed migration.
 
 create extension if not exists pgcrypto;
@@ -129,6 +129,49 @@ create table if not exists public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.terminal_commands (
+  id uuid primary key default gen_random_uuid(),
+  action text not null check (action in ('ban', 'kick', 'unban')),
+  roblox_username text not null,
+  roblox_user_id bigint,
+  raw_command text not null,
+  reason text,
+  status text not null default 'queued' check (status in ('queued', 'sent', 'completed', 'failed', 'cancelled')),
+  actor_type text not null check (actor_type in ('leadership', 'staff')),
+  actor_user_id uuid references auth.users(id),
+  actor_profile_id uuid references public.staff_profiles(id),
+  issued_by text not null,
+  server_job_id text,
+  place_id bigint,
+  result_message text,
+  created_at timestamptz not null default now(),
+  dispatched_at timestamptz,
+  completed_at timestamptz
+);
+
+create table if not exists public.terminal_bans (
+  roblox_user_id bigint primary key,
+  roblox_username text not null,
+  reason text,
+  command_id uuid references public.terminal_commands(id) on delete set null,
+  issued_by text,
+  actor_type text check (actor_type in ('leadership', 'staff')),
+  actor_user_id uuid references auth.users(id),
+  actor_profile_id uuid references public.staff_profiles(id),
+  banned_at timestamptz not null default now(),
+  active boolean not null default true
+);
+
+create table if not exists public.terminal_logs (
+  id uuid primary key default gen_random_uuid(),
+  command_id uuid references public.terminal_commands(id) on delete set null,
+  level text not null default 'info' check (level in ('info', 'warn', 'error')),
+  message text not null,
+  server_job_id text,
+  place_id bigint,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists staff_profiles_username_idx on public.staff_profiles (lower(username));
 create index if not exists staff_profiles_contractor_id_idx on public.staff_profiles (lower(contractor_id));
 create index if not exists activity_sessions_profile_start_idx on public.activity_sessions (profile_id, start_at desc);
@@ -137,6 +180,10 @@ create index if not exists payouts_profile_paid_idx on public.payouts (profile_i
 create index if not exists document_assignments_profile_idx on public.document_assignments (profile_id);
 create index if not exists staff_sessions_profile_expires_idx on public.staff_sessions (profile_id, expires_at desc);
 create index if not exists audit_logs_created_idx on public.audit_logs (created_at desc);
+create index if not exists terminal_commands_status_created_idx on public.terminal_commands (status, created_at);
+create index if not exists terminal_commands_actor_profile_idx on public.terminal_commands (actor_profile_id, created_at desc);
+create index if not exists terminal_bans_active_idx on public.terminal_bans (active, banned_at desc);
+create index if not exists terminal_logs_created_idx on public.terminal_logs (created_at desc);
 
 alter table public.leadership_users enable row level security;
 alter table public.portal_settings enable row level security;
@@ -149,6 +196,9 @@ alter table public.document_assignments enable row level security;
 alter table public.document_acknowledgements enable row level security;
 alter table public.staff_sessions enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.terminal_commands enable row level security;
+alter table public.terminal_bans enable row level security;
+alter table public.terminal_logs enable row level security;
 
 drop policy if exists "Leadership can read leadership users" on public.leadership_users;
 drop policy if exists "Leadership can manage leadership users" on public.leadership_users;
@@ -164,6 +214,9 @@ drop policy if exists "Leadership can manage acknowledgements" on public.documen
 drop policy if exists "Leadership can read staff sessions" on public.staff_sessions;
 drop policy if exists "Leadership can read audit logs" on public.audit_logs;
 drop policy if exists "Leadership can insert audit logs" on public.audit_logs;
+drop policy if exists "Leadership can read terminal commands" on public.terminal_commands;
+drop policy if exists "Leadership can read terminal bans" on public.terminal_bans;
+drop policy if exists "Leadership can read terminal logs" on public.terminal_logs;
 
 -- Leadership authorization is read from app_metadata, not user_metadata.
 -- Set auth.users.raw_app_meta_data.fri_role = 'leadership' for approved leadership accounts.
@@ -193,9 +246,9 @@ insert into public.portal_settings (key, value)
 values (
   'branding',
   jsonb_build_object(
-    'portalName', 'FRI Portal',
-    'accentColor', '#e85002',
-    'logoUrl', 'assets/summer-26-logo.png',
+    'portalName', 'Outbound',
+    'accentColor', '#f9f9f9',
+    'logoUrl', 'assets/outbound-logo.png',
     'logoPath', ''
   )
 )
@@ -258,6 +311,21 @@ create policy "Leadership can insert audit logs"
   to authenticated
   with check ((select auth.jwt() -> 'app_metadata' ->> 'fri_role') = 'leadership');
 
+create policy "Leadership can read terminal commands"
+  on public.terminal_commands for select
+  to authenticated
+  using ((select auth.jwt() -> 'app_metadata' ->> 'fri_role') = 'leadership');
+
+create policy "Leadership can read terminal bans"
+  on public.terminal_bans for select
+  to authenticated
+  using ((select auth.jwt() -> 'app_metadata' ->> 'fri_role') = 'leadership');
+
+create policy "Leadership can read terminal logs"
+  on public.terminal_logs for select
+  to authenticated
+  using ((select auth.jwt() -> 'app_metadata' ->> 'fri_role') = 'leadership');
+
 grant usage on schema public to anon, authenticated;
 grant select on public.portal_settings to anon;
 grant select, insert, update, delete on
@@ -270,7 +338,10 @@ grant select, insert, update, delete on
   public.documents,
   public.document_assignments,
   public.document_acknowledgements,
-  public.audit_logs
+  public.audit_logs,
+  public.terminal_commands,
+  public.terminal_bans,
+  public.terminal_logs
 to authenticated;
 
 insert into storage.buckets (id, name, public, file_size_limit)

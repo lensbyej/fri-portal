@@ -1,0 +1,7 @@
+project_id = "flwtzlcccumejmhbfjlh"
+
+[functions.terminal-command]
+verify_jwt = false
+
+[functions.roblox-terminal]
+verify_jwt = false

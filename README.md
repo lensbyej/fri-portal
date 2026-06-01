@@ -1,6 +1,6 @@
-# First Response Interactive Staff Portal
+# Outbound Staff Portal
 
-Premium dark staff operations portal for First Response Interactive. The app is configured for the First Response Interactive Supabase project and includes schema and Edge Functions for authentication, profile storage, activity tracking, documents, payouts, discipline history, and audit logs.
+Premium light bento staff operations portal for Outbound. The app is configured for Supabase and includes schema and Edge Functions for authentication, profile storage, activity tracking, Roblox operations, documents, payouts, discipline history, and audit logs.
 
 ## Run Locally
 
@@ -22,6 +22,9 @@ supabase functions deploy staff-pin-auth
 supabase functions deploy staff-activity
 supabase functions deploy document-ack
 supabase functions deploy leadership-admin
+supabase functions deploy roblox-status
+supabase functions deploy terminal-command --no-verify-jwt
+supabase functions deploy roblox-terminal --no-verify-jwt
 ```
 
 3. Add `SUPABASE_SERVICE_ROLE_KEY` to Edge Function secrets. Do not expose it in browser code.
@@ -34,7 +37,7 @@ supabase functions deploy leadership-admin
 5. Confirm the project publishable key in `config.js`:
 
 ```js
-window.FRI_CONFIG = {
+window.OUTBOUND_CONFIG = {
   supabaseUrl: "https://flwtzlcccumejmhbfjlh.supabase.co",
   supabasePublishableKey: "sb_publishable_FmtKCT5w9hIgXV2iBo74vw_mqsu1WLu",
   demoMode: false,
@@ -42,6 +45,20 @@ window.FRI_CONFIG = {
 ```
 
 The public staff lookup uses Edge Functions for PIN verification so PIN hashes stay server-side. Leadership users authenticate with Supabase Auth and are authorized through `app_metadata`, not user-editable metadata. The app will show a launch-blocking "Supabase Key Missing" status until the publishable key is set.
+
+## Roblox Terminal
+
+The Leadership and staff profile screens include an Outbound Terminal for Roblox moderation commands:
+
+```text
+/ban RobloxUsername optional reason
+/kick RobloxUsername optional reason
+/unban RobloxUsername optional reason
+```
+
+`terminal-command` validates the leadership auth session or staff PIN session, writes the command to Supabase, and records audit logs. `roblox-terminal` is called by Roblox servers with `x-outbound-engine-key`; it polls pending commands, checks active bans, and stores command acknowledgements.
+
+Place `roblox/OutboundEngineTerminal.server.lua` in Roblox `ServerScriptService`, enable HTTP requests in Game Settings, and set `ENGINE_API_KEY` in that script to the private Outbound engine key configured for this project. The key is verified by hash through `portal_settings.key = 'terminal_engine'`, so the plaintext key is not stored in browser code or committed source.
 
 ## First Leadership Account
 
@@ -72,8 +89,9 @@ For isolated UI testing only, set `demoMode: true` in `config.js`. Do not deploy
 ## Files
 
 - `index.html` - Portal shell and screens.
-- `styles.css` - Dark enterprise dashboard styling.
-- `app.js` - Lookup, staff profile, activity tracker, documents, leadership dashboard, demo store, and Supabase adapter.
-- `assets/summer-26-logo.png` - Temporary Summer '26 Content Drop logo.
+- `styles.css` - Light bento dashboard styling.
+- `app.js` - Lookup, staff profile, activity tracker, Roblox operations, documents, leadership dashboard, demo store, and Supabase adapter.
+- `assets/outbound-logo.png` - Outbound logo.
 - `supabase/schema.sql` - Tables, indexes, RLS policies, storage buckets, and grants.
-- `supabase/functions/*` - Staff PIN auth, activity session, document acknowledgement, and leadership admin Edge Functions.
+- `supabase/functions/*` - Staff PIN auth, activity session, document acknowledgement, Roblox status, Terminal moderation, and leadership admin Edge Functions.
+- `roblox/OutboundEngineTerminal.server.lua` - Roblox ServerScriptService bridge for Terminal bans and kicks.

@@ -1,12 +1,50 @@
 (function () {
   const STORAGE_KEY = "fri-portal-demo-store-v2";
   const DEFAULT_BRANDING = {
-    portalName: "FRI Portal",
-    accentColor: "#e85002",
-    logoUrl: "assets/summer-26-logo.png",
+    portalName: "Outbound",
+    accentColor: "#1D4ED8",
+    buttonColor: "#1D4ED8",
+    backgroundColor: "#EDEDED",
+    textColor: "#101014",
+    logoUrl: "assets/outbound-logo.png",
     logoPath: "",
   };
-  const config = window.FRI_CONFIG || {};
+  const ROBLOX_GAMES = [
+    {
+      name: "S1 Testing",
+      placeId: 13532792960,
+      universeId: 4704233432,
+      url: "https://www.roblox.com/games/13532792960/Dev-Testing",
+    },
+    {
+      name: "S2 Testing",
+      placeId: 13196289331,
+      universeId: 4603179307,
+      url: "https://www.roblox.com/games/13196289331/FRI-S2-Testing",
+    },
+    {
+      name: "Rewrite (Noxies Version)",
+      placeId: 133470628457954,
+      universeId: 9369507971,
+      url: "https://www.roblox.com/games/133470628457954/Rewirte",
+    },
+    {
+      name: "Private Servers",
+      placeId: 94464403538690,
+      universeId: 9820725880,
+      url: "https://www.roblox.com/games/94464403538690/Private-Servers",
+    },
+  ];
+  const ROBLOX_TEAM = [
+    { name: "Noxarien", role: "Co-owner", userId: 1534838663, url: "https://www.roblox.com/users/1534838663/profile" },
+    { name: "Berks", role: "Owner", userId: 1634477467, url: "https://www.roblox.com/users/1634477467/profile" },
+    { name: "Flash", role: "Developer", userId: 1132319120, url: "https://www.roblox.com/users/1132319120/profile" },
+    { name: "Matt", role: "Developer", userId: 982082574, url: "https://www.roblox.com/users/982082574/profile" },
+    { name: "Pizza", role: "Developer", userId: 1182441301, url: "https://www.roblox.com/users/1182441301/profile" },
+    { name: "Infinate", role: "Developer", userId: 5810514920, url: "https://www.roblox.com/users/5810514920/profile" },
+    { name: "Decentclv", role: "Developer", userId: 672288263, url: "https://www.roblox.com/users/672288263/profile" },
+  ];
+  const config = window.OUTBOUND_CONFIG || window.FRI_CONFIG || {};
   const state = {
     backend: "demo",
     supabase: null,
@@ -19,6 +57,10 @@
     leadershipUser: null,
     leadershipSection: "dashboard",
     leadershipDetailProfileId: null,
+    robloxStatus: null,
+    robloxLoading: false,
+    sidebarOpen: true,
+    terminalLoading: false,
     timer: null,
     searchTerm: "",
     filterStatus: "all",
@@ -26,12 +68,10 @@
 
   const leadershipSections = [
     ["dashboard", "Dashboard"],
-    ["staff", "Staff Management"],
-    ["contractors", "Contractors"],
-    ["activity", "Activity Tracking"],
-    ["payouts", "Payouts"],
+    ["terminal", "Terminal"],
+    ["activity", "Activity"],
+    ["staff", "Staff"],
     ["documents", "Documents"],
-    ["reports", "Reports"],
     ["settings", "System Settings"],
   ];
 
@@ -43,9 +83,11 @@
   async function bootstrap() {
     await initSupabase();
     state.data = state.backend === "demo" ? loadStore() : emptyStore();
+    ensureStoreShape(state.data);
     await hydrateDemoSecurity();
     await loadPortalBranding();
     applyPortalBranding();
+    await restoreLeadershipSession();
     bindGlobalEvents();
     renderConnectionStatus();
     renderLeadershipNav();
@@ -88,6 +130,7 @@
     $("#leadershipButton").addEventListener("click", () => showLeadershipLogin());
     $("#profileSignOutButton").addEventListener("click", () => showLookup());
     $("#leadershipSignOutButton").addEventListener("click", leadershipSignOut);
+    $("#sidebarToggleButton").addEventListener("click", toggleSidebar);
     $("#lookupForm").addEventListener("submit", onLookupSubmit);
     $("#pinForm").addEventListener("submit", onPinSubmit);
     $("#leadershipLoginForm").addEventListener("submit", onLeadershipLogin);
@@ -97,6 +140,7 @@
 
     document.addEventListener("click", handleActionClick);
     document.addEventListener("change", handleInputChange);
+    document.addEventListener("submit", handleDynamicSubmit);
   }
 
   function startTimerLoop() {
@@ -199,7 +243,7 @@
       const user = await adapter.leadershipLogin(email, password);
       state.leadershipUser = user;
       if (state.backend === "supabase") {
-        state.data = await loadSupabaseData();
+        state.data = ensureStoreShape(await loadSupabaseData());
       }
       renderLeadership();
       showScreen("leadershipScreen");
@@ -214,6 +258,23 @@
     }
     state.leadershipUser = null;
     showLeadershipLogin();
+  }
+
+  async function restoreLeadershipSession() {
+    if (state.backend !== "supabase" || !state.supabase) return;
+
+    const { data, error } = await state.supabase.auth.getUser();
+    if (error || !data.user || data.user.app_metadata?.fri_role !== "leadership") return;
+
+    const { data: leadershipProfile, error: profileError } = await state.supabase
+      .from("leadership_users")
+      .select("*")
+      .eq("user_id", data.user.id)
+      .maybeSingle();
+    if (profileError || !leadershipProfile) return;
+
+    state.leadershipUser = { id: data.user.id, email: data.user.email, ...leadershipProfile };
+    state.data = ensureStoreShape(await loadSupabaseData());
   }
 
   const adapter = {
@@ -374,6 +435,8 @@
             </div>
           </section>
 
+          ${terminalPanel("staff")}
+
           <section class="card">
             <div class="section-title">
               <h2>Documents & Acknowledgements</h2>
@@ -421,6 +484,7 @@
         </div>
       </div>
     `;
+    loadTerminalHistory("staff");
   }
 
   function updateProfileTimer() {
@@ -442,18 +506,38 @@
   function renderLeadership() {
     renderConnectionStatus();
     renderLeadershipNav();
-    $("#leadershipTitle").textContent = leadershipSections.find(([id]) => id === state.leadershipSection)[1];
+    const activeSection = leadershipSections.find(([id]) => id === state.leadershipSection);
+    if (!activeSection) {
+      state.leadershipSection = "dashboard";
+      state.leadershipDetailProfileId = null;
+    }
+    $("#leadershipTitle").textContent = (leadershipSections.find(([id]) => id === state.leadershipSection) || leadershipSections[0])[1];
+    const detailMode = Boolean(state.leadershipDetailProfileId && state.leadershipSection === "staff");
+    $("#leadershipScreen .screen-head")?.classList.toggle("detail-mode", detailMode);
+    syncSidebarState();
     const renderers = {
       dashboard: renderDashboard,
-      staff: renderStaffManagement,
-      contractors: renderContractorManagement,
+      terminal: renderTerminalManagement,
       activity: renderActivityManagement,
-      payouts: renderPayoutManagement,
+      staff: renderStaffManagement,
       documents: renderDocumentsManagement,
-      reports: renderReports,
       settings: renderSettings,
     };
     renderers[state.leadershipSection]();
+  }
+
+  function toggleSidebar() {
+    state.sidebarOpen = !state.sidebarOpen;
+    syncSidebarState();
+  }
+
+  function syncSidebarState() {
+    const screen = $("#leadershipScreen");
+    const toggle = $("#sidebarToggleButton");
+    if (!screen || !toggle) return;
+    screen.classList.toggle("sidebar-collapsed", !state.sidebarOpen);
+    toggle.setAttribute("aria-expanded", String(state.sidebarOpen));
+    toggle.querySelector("span").textContent = state.sidebarOpen ? "Close" : "Menu";
   }
 
   async function loadPortalBranding() {
@@ -474,10 +558,16 @@
     const branding = normalizeBranding(state.settings);
     state.settings = branding;
     const root = document.documentElement;
-    const accentRgb = hexToRgb(branding.accentColor, "232, 80, 2");
-    root.style.setProperty("--orange", branding.accentColor);
-    root.style.setProperty("--orange-2", branding.accentColor);
+    const accentRgb = hexToRgb(branding.buttonColor, "29, 78, 216");
+    root.style.setProperty("--accent-rgb", accentRgb);
+    root.style.setProperty("--accent-contrast", contrastForHex(branding.buttonColor));
+    root.style.setProperty("--bg", branding.backgroundColor);
+    root.style.setProperty("--shell", branding.backgroundColor);
+    root.style.setProperty("--text", branding.textColor);
+    root.style.setProperty("--orange", branding.buttonColor);
+    root.style.setProperty("--orange-2", branding.buttonColor);
     root.style.setProperty("--line-strong", `rgba(${accentRgb}, 0.42)`);
+    document.querySelector("meta[name='theme-color']")?.setAttribute("content", branding.backgroundColor);
 
     document.title = branding.portalName;
     const lookupTitle = $("#lookupTitle");
@@ -492,10 +582,16 @@
   }
 
   function normalizeBranding(value = {}) {
-    const accentColor = isHexColor(value.accentColor) ? value.accentColor : DEFAULT_BRANDING.accentColor;
+    const savedAccent = String(value.accentColor || "");
+    const savedButton = String(value.buttonColor || savedAccent);
+    const buttonColor = isHexColor(savedButton) && savedButton.toLowerCase() !== "#f9f9f9" ? savedButton : DEFAULT_BRANDING.buttonColor;
+    const accentColor = buttonColor;
     return {
       portalName: String(value.portalName || DEFAULT_BRANDING.portalName).trim() || DEFAULT_BRANDING.portalName,
       accentColor,
+      buttonColor,
+      backgroundColor: isHexColor(value.backgroundColor) ? value.backgroundColor : DEFAULT_BRANDING.backgroundColor,
+      textColor: isHexColor(value.textColor) ? value.textColor : DEFAULT_BRANDING.textColor,
       logoUrl: String(value.logoUrl || DEFAULT_BRANDING.logoUrl),
       logoPath: String(value.logoPath || ""),
     };
@@ -509,6 +605,16 @@
 
   function isHexColor(value) {
     return /^#[0-9a-f]{6}$/i.test(String(value || ""));
+  }
+
+  function contrastForHex(hex) {
+    const clean = String(hex || "").replace("#", "");
+    if (!/^[0-9a-f]{6}$/i.test(clean)) return "#050505";
+    const red = parseInt(clean.slice(0, 2), 16);
+    const green = parseInt(clean.slice(2, 4), 16);
+    const blue = parseInt(clean.slice(4, 6), 16);
+    const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+    return luminance > 0.62 ? "#050505" : "#ffffff";
   }
 
   function renderConnectionStatus() {
@@ -529,28 +635,69 @@
   }
 
   function renderDashboard() {
+    if (!state.robloxStatus && !state.robloxLoading) {
+      refreshRobloxStatus();
+    }
+
     const activeCount = state.data.profiles.filter((profile) => getActiveSession(profile.id)).length;
     const totalWeek = state.data.profiles.reduce((sum, profile) => sum + totalActivity(profile.id, "week"), 0);
-    const totalPayouts = state.data.payouts.reduce((sum, payout) => sum + Number(payout.amount || 0), 0);
     const outstanding = state.data.documents.reduce((sum, doc) => sum + uncompletedForDoc(doc.id).length, 0);
+    const status = state.robloxStatus || {};
+    const games = status.games || ROBLOX_GAMES.map((game) => ({ ...game, playing: null, updated: null, robloxName: game.name }));
+    const team = status.team || ROBLOX_TEAM.map((member) => ({ ...member, status: "Checking", lastLocation: "Waiting for Roblox" }));
+    const totalPlayers = games.reduce((sum, game) => sum + Number(game.playing || 0), 0);
+    const studioCount = team.filter((member) => member.status === "In Studio").length;
+    const onlineCount = team.filter((member) => ["Online", "In Experience", "In Studio"].includes(member.status)).length;
 
     $("#leadershipContent").innerHTML = `
-      <div class="dashboard-grid">
-        ${metricCard("Total Active Staff", activeCount)}
-        ${metricCard("Total Hours This Week", formatDuration(totalWeek))}
-        ${metricCard("Tracked Robux Payouts", formatRobux(totalPayouts))}
-        ${metricCard("Outstanding Documents", outstanding)}
+      <div class="toolbar roblox-toolbar">
+        <div>
+          <p class="eyebrow">Roblox Operations</p>
+          <h2>Live Experiences & Developer Presence</h2>
+          <p>Player counts, update timestamps, and developer presence are the first signal for Outbound operations.</p>
+        </div>
+        <div class="inline-actions">
+          <span class="tag">${status.checkedAt ? `Checked ${formatDateTime(status.checkedAt)}` : "Checking Roblox"}</span>
+          <button class="accent-button" type="button" data-action="refresh-roblox" ${state.robloxLoading ? "disabled" : ""}>${state.robloxLoading ? "Refreshing" : "Refresh"}</button>
+        </div>
       </div>
+      <div class="dashboard-grid">
+        ${metricCard("Players Online", totalPlayers)}
+        ${metricCard("Games Online", games.filter((game) => Number(game.playing || 0) > 0).length)}
+        ${metricCard("Team In Studio", studioCount)}
+        ${metricCard("Team Online", onlineCount)}
+      </div>
+      <section class="card dashboard-hero-card">
+        <div class="section-title">
+          <h2>Tracked Games</h2>
+          <span class="tag">${games.length} Experiences</span>
+        </div>
+        <div class="roblox-game-grid dashboard-roblox-grid">
+          ${games.map((game) => robloxGameCard(game)).join("")}
+        </div>
+      </section>
+      <div style="height:18px"></div>
       <div class="content-grid">
         <section class="card chart-card">
-          <div class="section-title"><h2>Activity Analytics</h2><span class="tag orange">Live</span></div>
+          <div class="section-title"><h2>Staff Activity</h2><span class="tag orange">${activeCount} Active</span></div>
           <canvas id="activityChart" height="220"></canvas>
+          <div class="metric-grid compact-metrics">
+            ${metricCard("Hours This Week", formatDuration(totalWeek))}
+            ${metricCard("Activity Sessions", state.data.activities.length)}
+            ${metricCard("Outstanding Docs", outstanding)}
+            ${metricCard("Profiles", state.data.profiles.length)}
+          </div>
         </section>
         <section class="card">
-          <div class="section-title"><h2>Recent Activity</h2></div>
+          <div class="section-title"><h2>Developer Presence</h2><span class="tag">${onlineCount} Online</span></div>
+          <div class="roblox-team-grid dashboard-team-grid">
+            ${team.slice(0, 4).map((member) => robloxTeamCard(member)).join("")}
+          </div>
+          <div style="height:14px"></div>
+          <div class="section-title"><h2>Recent Audit</h2></div>
           <div class="timeline audit-feed">
             ${state.data.auditLogs
-              .slice(-10)
+              .slice(-6)
               .reverse()
               .map(
                 (log) => `
@@ -569,6 +716,422 @@
     drawActivityChart();
   }
 
+  function renderRobloxOps() {
+    if (!state.robloxStatus && !state.robloxLoading) {
+      refreshRobloxStatus();
+    }
+
+    const status = state.robloxStatus || {};
+    const games = status.games || ROBLOX_GAMES.map((game) => ({ ...game, playing: null, updated: null, robloxName: game.name }));
+    const team = status.team || ROBLOX_TEAM.map((member) => ({ ...member, status: "Checking", lastLocation: "Waiting for Roblox" }));
+    const totalPlayers = games.reduce((sum, game) => sum + Number(game.playing || 0), 0);
+    const studioCount = team.filter((member) => member.status === "In Studio").length;
+    const onlineCount = team.filter((member) => ["Online", "In Experience", "In Studio"].includes(member.status)).length;
+    const offlineCount = team.filter((member) => member.status === "Offline").length;
+
+    $("#leadershipContent").innerHTML = `
+      <div class="toolbar roblox-toolbar">
+        <div>
+          <p class="eyebrow">Roblox Operations</p>
+          <h2>Live Experiences & Developer Presence</h2>
+          <p>Player counts, last update times, and team presence pulled from Roblox.</p>
+        </div>
+        <div class="inline-actions">
+          <span class="tag">${status.checkedAt ? `Checked ${formatDateTime(status.checkedAt)}` : "Not checked yet"}</span>
+          <button class="accent-button" type="button" data-action="refresh-roblox" ${state.robloxLoading ? "disabled" : ""}>${state.robloxLoading ? "Refreshing" : "Refresh"}</button>
+        </div>
+      </div>
+
+      ${
+        status.error
+          ? `<div class="card roblox-error"><strong>Roblox status unavailable</strong><p>${escapeHtml(status.error)}</p></div>`
+          : ""
+      }
+
+      <div class="dashboard-grid">
+        ${metricCard("Players Online", totalPlayers)}
+        ${metricCard("Games Online", games.filter((game) => Number(game.playing || 0) > 0).length)}
+        ${metricCard("Team In Studio", studioCount)}
+        ${metricCard("Team Offline", offlineCount)}
+      </div>
+
+      <section class="card">
+        <div class="section-title">
+          <h2>Games</h2>
+          <span class="tag">${games.length} Tracked</span>
+        </div>
+        <div class="roblox-game-grid">
+          ${games.map((game) => robloxGameCard(game)).join("")}
+        </div>
+      </section>
+
+      <div style="height:18px"></div>
+
+      <section class="card">
+        <div class="section-title">
+          <h2>Team Presence</h2>
+          <span class="tag">${onlineCount} Online</span>
+        </div>
+        <div class="roblox-team-grid">
+          ${team.map((member) => robloxTeamCard(member)).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  async function refreshRobloxStatus() {
+    state.robloxLoading = true;
+    if (state.leadershipSection === "activity") renderActivityManagement();
+    if (state.leadershipSection === "dashboard") renderDashboard();
+
+    try {
+      if (state.backend !== "supabase") {
+        state.robloxStatus = demoRobloxStatus();
+        return;
+      }
+      const { data, error } = await state.supabase.functions.invoke("roblox-status", { body: {} });
+      if (error) throw error;
+      state.robloxStatus = data;
+    } catch (error) {
+      state.robloxStatus = {
+        checkedAt: new Date().toISOString(),
+        error: cleanError(error),
+        games: ROBLOX_GAMES.map((game) => ({ ...game, playing: 0, updated: null, robloxName: game.name })),
+        team: ROBLOX_TEAM.map((member) => ({ ...member, status: "Offline", presenceType: 0, lastLocation: "Unavailable" })),
+      };
+    } finally {
+      state.robloxLoading = false;
+      if (state.leadershipSection === "activity") renderActivityManagement();
+      if (state.leadershipSection === "dashboard") renderDashboard();
+    }
+  }
+
+  function demoRobloxStatus() {
+    return {
+      checkedAt: new Date().toISOString(),
+      games: ROBLOX_GAMES.map((game) => ({ ...game, robloxName: game.name, playing: 0, updated: null })),
+      team: ROBLOX_TEAM.map((member) => ({ ...member, status: "Offline", presenceType: 0, lastLocation: "Demo mode" })),
+    };
+  }
+
+  function robloxGameCard(game) {
+    const playing = Number(game.playing || 0);
+    return `
+      <article class="roblox-game-card">
+        <div class="roblox-card-head">
+          <div>
+            <h3>${escapeHtml(game.name)}</h3>
+            <p>${escapeHtml(game.robloxName || game.name)}</p>
+          </div>
+          ${robloxPresenceTag(playing > 0 ? "Online" : "Offline")}
+        </div>
+        <div class="roblox-count">${playing.toLocaleString()}</div>
+        <p class="field-label">People Online</p>
+        <div class="roblox-meta">
+          <span>Last Updated</span>
+          <strong>${game.updated ? formatDateTime(game.updated) : "Unavailable"}</strong>
+        </div>
+        <div class="roblox-meta">
+          <span>Place ID</span>
+          <strong>${escapeHtml(String(game.placeId))}</strong>
+        </div>
+        <a class="ghost-button full" href="${escapeAttr(game.url)}" target="_blank" rel="noreferrer">Open Roblox</a>
+      </article>
+    `;
+  }
+
+  function robloxTeamCard(member) {
+    return `
+      <article class="roblox-person-card">
+        <div class="roblox-person-main">
+          ${
+            member.avatarUrl
+              ? `<img src="${escapeAttr(member.avatarUrl)}" alt="${escapeAttr(member.name)} avatar" />`
+              : `<div class="roblox-avatar-fallback">${initials(member.name)}</div>`
+          }
+          <div>
+            <h3>${escapeHtml(member.name)}</h3>
+            <p>${escapeHtml(member.role)}</p>
+          </div>
+        </div>
+        <div class="roblox-person-status">
+          ${robloxPresenceTag(member.status)}
+          <p>${escapeHtml(member.lastLocation || "Roblox")}</p>
+        </div>
+        <a class="profile-link-button" href="${escapeAttr(member.url)}" target="_blank" rel="noreferrer">Profile</a>
+      </article>
+    `;
+  }
+
+  function robloxPresenceTag(status) {
+    const normalized = status || "Offline";
+    let color = "red";
+    if (normalized === "Online" || normalized === "In Experience") color = "green";
+    if (normalized === "In Studio" || normalized === "Checking") color = "yellow";
+    return `<span class="tag ${color}">${escapeHtml(normalized)}</span>`;
+  }
+
+  function renderTerminalManagement() {
+    $("#leadershipContent").innerHTML = terminalPanel("leadership");
+    loadTerminalHistory("leadership");
+  }
+
+  function terminalPanel(scope) {
+    const title = scope === "staff" ? "Terminal" : "Outbound Terminal";
+    const subtitle =
+      scope === "staff"
+        ? "Run Roblox moderation commands from your staff session."
+        : "Run Roblox moderation commands and monitor server acknowledgements.";
+    return `
+      <section class="card terminal-card">
+        <div class="section-title">
+          <div>
+            <h2>${title}</h2>
+            <p>${subtitle}</p>
+          </div>
+          <button class="ghost-button" type="button" data-action="refresh-terminal" data-scope="${scope}">Refresh</button>
+        </div>
+        <div class="terminal-window" data-terminal-scope="${scope}">
+          <div class="terminal-titlebar">
+            <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <strong>outbound-terminal</strong>
+          </div>
+          <div class="terminal-output" id="${scope}TerminalOutput">
+            ${terminalHistoryMarkup(scope)}
+          </div>
+          <form class="terminal-input-row" id="${scope}TerminalForm" data-terminal-scope="${scope}">
+            <span class="terminal-prompt">outbound%</span>
+            <label class="sr-only" for="${scope}TerminalInput">Terminal command</label>
+            <input id="${scope}TerminalInput" name="command" placeholder="/ban, /kick, or /unban RobloxUsername" autocomplete="off" />
+            <button class="terminal-run-button" type="submit">Run</button>
+          </form>
+        </div>
+        ${terminalModerationHistoryMarkup(scope)}
+      </section>
+    `;
+  }
+
+  function terminalHistoryMarkup(scope) {
+    const commands = terminalCommandsForScope(scope).slice(0, 16);
+    const logs = (state.data.terminalLogs || []).slice(0, 4);
+    if (state.terminalLoading) {
+      return `<div class="terminal-line muted"><span>Loading terminal history...</span></div>`;
+    }
+    if (!commands.length) {
+      if (logs.length) {
+        return logs
+          .map((log) => `<div class="terminal-line muted"><span>${escapeHtml(log.level || "info")}</span><span>${escapeHtml(log.message || "")}</span></div>`)
+          .join("");
+      }
+      return `
+        <div class="terminal-line muted"><span>Outbound Terminal ready.</span></div>
+        <div class="terminal-line muted"><span>Allowed commands: /ban, /kick, /unban RobloxUsername</span></div>
+      `;
+    }
+    const commandMarkup = commands
+      .map(
+        (command) => `
+          <div class="terminal-entry">
+            <div class="terminal-line">
+              <span class="terminal-prompt">${escapeHtml(command.issuedBy || "outbound")}%</span>
+              <span>${escapeHtml(command.rawCommand || `/${command.action} ${command.robloxUsername}`)}</span>
+            </div>
+            <div class="terminal-line muted">
+              <span>${escapeHtml(command.status || "queued")}</span>
+              <span>${command.robloxUserId ? `#${escapeHtml(String(command.robloxUserId))}` : "awaiting Roblox ID"}</span>
+              <span>${escapeHtml(command.resultMessage || formatDateTime(command.createdAt))}</span>
+            </div>
+          </div>
+        `,
+      )
+      .join("");
+    const logMarkup = logs
+      .map((log) => `<div class="terminal-line muted"><span>${escapeHtml(log.level || "info")}</span><span>${escapeHtml(log.message || "")}</span></div>`)
+      .join("");
+    return commandMarkup + logMarkup;
+  }
+
+  function terminalModerationHistoryMarkup(scope) {
+    const commands = terminalCommandsForScope(scope).slice(0, 12);
+    const rows = commands
+      .map(
+        (command) => `
+          <article class="moderation-row">
+            <span class="mod-action ${escapeAttr(command.action || "command")}">${escapeHtml(command.action || "command")}</span>
+            <div class="mod-target">
+              <strong>${escapeHtml(command.robloxUsername || "Unknown user")}</strong>
+              <span>${command.robloxUserId ? `#${escapeHtml(String(command.robloxUserId))}` : "Roblox ID pending"}</span>
+            </div>
+            <div>
+              <strong>${escapeHtml(command.issuedBy || "Outbound")}</strong>
+              <span>${escapeHtml(command.actorType || "moderator")}</span>
+            </div>
+            <div>
+              <strong>${escapeHtml(command.status || "queued")}</strong>
+              <span>${escapeHtml(command.resultMessage || command.reason || "No result yet")}</span>
+            </div>
+            <time>${escapeHtml(formatDateTime(command.completedAt || command.createdAt))}</time>
+          </article>
+        `,
+      )
+      .join("");
+
+    return `
+      <div class="moderation-history" id="${scope}ModerationHistory">
+        <div class="moderation-history-head">
+          <div>
+            <h3>Moderation History</h3>
+            <p>Recent Terminal actions and Roblox server responses.</p>
+          </div>
+          <span>${commands.length} shown</span>
+        </div>
+        <div class="moderation-history-list">
+          ${
+            rows ||
+            `<div class="empty-state compact">
+              <strong>No moderation history yet.</strong>
+              <p>Run a Terminal command to create the first record.</p>
+            </div>`
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  function terminalCommandsForScope(scope) {
+    const commands = state.data.terminalCommands || [];
+    if (scope === "staff" && state.currentProfile) {
+      return commands.filter((command) => command.actorProfileId === state.currentProfile.id);
+    }
+    return commands;
+  }
+
+  async function loadTerminalHistory(scope) {
+    if (!state.data) return;
+    if (state.backend !== "supabase") {
+      updateTerminalOutput(scope);
+      return;
+    }
+    if (state.terminalLoading) return;
+    state.terminalLoading = true;
+    updateTerminalOutput(scope);
+    try {
+      const body = { action: "history" };
+      if (scope === "staff" && state.currentProfile) {
+        Object.assign(body, { profileId: state.currentProfile.id, sessionToken: state.staffSessionToken });
+      }
+      const { data, error } = await state.supabase.functions.invoke("terminal-command", { body });
+      if (error) throw error;
+      state.data.terminalCommands = (data?.commands || []).map(mapTerminalCommand);
+      state.data.terminalLogs = data?.logs || [];
+      state.data.terminalBans = data?.bans || [];
+    } catch (error) {
+      pushLocalTerminalLog(`Terminal history unavailable: ${cleanError(error)}`, "error");
+    } finally {
+      state.terminalLoading = false;
+      updateTerminalOutput(scope);
+    }
+  }
+
+  function updateTerminalOutput(scope) {
+    const output = $(`#${scope}TerminalOutput`);
+    if (output) output.innerHTML = terminalHistoryMarkup(scope);
+    const history = $(`#${scope}ModerationHistory`);
+    if (history) history.outerHTML = terminalModerationHistoryMarkup(scope);
+  }
+
+  async function submitTerminalCommand(scope) {
+    const input = $(`#${scope}TerminalInput`);
+    const command = input?.value.trim() || "";
+    if (!command) return;
+
+    const parsed = parseTerminalCommand(command);
+    if (!parsed) {
+      pushLocalTerminalLog("Use /ban, /kick, or /unban RobloxUsername", "error");
+      updateTerminalOutput(scope);
+      return;
+    }
+
+    if (input) input.value = "";
+
+    try {
+      if (state.backend === "supabase") {
+        const body = { action: "submit", command };
+        if (scope === "staff" && state.currentProfile) {
+          Object.assign(body, { profileId: state.currentProfile.id, sessionToken: state.staffSessionToken });
+        }
+        const { data, error } = await state.supabase.functions.invoke("terminal-command", { body });
+        if (error) throw error;
+        if (data?.command) {
+          state.data.terminalCommands = [mapTerminalCommand(data.command), ...(state.data.terminalCommands || [])];
+        }
+        pushLocalTerminalLog(data?.message || "Command queued", "info");
+        await loadTerminalHistory(scope);
+        return;
+      }
+
+      const localCommand = {
+        id: cryptoRandom(),
+        action: parsed.action,
+        robloxUsername: parsed.username,
+        robloxUserId: "",
+        rawCommand: command,
+        reason: parsed.reason,
+        status: "queued",
+        actorType: scope === "staff" ? "staff" : "leadership",
+        actorProfileId: scope === "staff" ? state.currentProfile?.id : "",
+        issuedBy: scope === "staff" ? state.currentProfile?.fullName : state.leadershipUser?.name || "Leadership",
+        resultMessage: "Demo command queued",
+        createdAt: new Date().toISOString(),
+      };
+      state.data.terminalCommands.unshift(localCommand);
+      pushLocalTerminalLog(`Queued ${parsed.action} for ${parsed.username}`, "info");
+      logAudit("terminal_command_queued", localCommand.id, localCommand.rawCommand);
+      saveStore();
+      updateTerminalOutput(scope);
+    } catch (error) {
+      pushLocalTerminalLog(cleanError(error), "error");
+      updateTerminalOutput(scope);
+    }
+  }
+
+  function parseTerminalCommand(command) {
+    const match = command.trim().match(/^\/(ban|kick|unban)\s+([A-Za-z0-9_]{3,20})(?:\s+(.{1,240}))?$/i);
+    if (!match) return null;
+    return { action: match[1].toLowerCase(), username: match[2], reason: match[3]?.trim() || "" };
+  }
+
+  function pushLocalTerminalLog(message, level = "info") {
+    state.data.terminalLogs = state.data.terminalLogs || [];
+    state.data.terminalLogs.unshift({
+      id: cryptoRandom(),
+      level,
+      message,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  function mapTerminalCommand(row) {
+    return {
+      id: row.id,
+      action: row.action,
+      robloxUsername: row.robloxUsername,
+      robloxUserId: row.robloxUserId,
+      rawCommand: row.rawCommand,
+      reason: row.reason,
+      status: row.status,
+      actorType: row.actorType,
+      actorProfileId: row.actorProfileId,
+      issuedBy: row.issuedBy,
+      resultMessage: row.resultMessage,
+      serverJobId: row.serverJobId,
+      placeId: row.placeId,
+      createdAt: row.createdAt,
+      dispatchedAt: row.dispatchedAt,
+      completedAt: row.completedAt,
+    };
+  }
+
   function renderStaffManagement() {
     const detailProfile = state.leadershipDetailProfileId ? getProfile(state.leadershipDetailProfileId) : null;
     if (detailProfile?.kind === "staff") {
@@ -583,7 +1146,7 @@
         <div class="split-row">
           <input id="managementSearch" placeholder="Search staff" value="${escapeAttr(state.searchTerm)}" />
           <select id="statusFilter">
-            ${["all", "Active", "On Leave", "Contractor", "Suspended", "Archived"].map((status) => `<option value="${status}" ${state.filterStatus === status ? "selected" : ""}>${status}</option>`).join("")}
+            ${["all", "Active", "On Leave", "Suspended", "Archived"].map((status) => `<option value="${status}" ${state.filterStatus === status ? "selected" : ""}>${status}</option>`).join("")}
           </select>
         </div>
         <button class="accent-button" type="button" data-action="open-staff-form">Create Staff Profile</button>
@@ -611,24 +1174,64 @@
   }
 
   function renderActivityManagement() {
+    if (!state.robloxStatus && !state.robloxLoading) {
+      refreshRobloxStatus();
+    }
+
     const active = state.data.profiles.filter((profile) => getActiveSession(profile.id));
     const allSessions = state.data.activities
       .slice()
       .sort((a, b) => new Date(b.startAt) - new Date(a.startAt))
       .slice(0, 30);
+    const status = state.robloxStatus || {};
+    const games = status.games || ROBLOX_GAMES.map((game) => ({ ...game, playing: null, updated: null, robloxName: game.name }));
+    const team = status.team || ROBLOX_TEAM.map((member) => ({ ...member, status: "Checking", lastLocation: "Waiting for Roblox" }));
+    const totalPlayers = games.reduce((sum, game) => sum + Number(game.playing || 0), 0);
+    const studioCount = team.filter((member) => member.status === "In Studio").length;
+    const onlineCount = team.filter((member) => ["Online", "In Experience", "In Studio"].includes(member.status)).length;
 
     $("#leadershipContent").innerHTML = `
-      <div class="dashboard-grid">
-        ${metricCard("Live Active Staff", active.length)}
-        ${metricCard("Total Hours Today", formatDuration(totalActivityAll("today")))}
-        ${metricCard("Total Hours This Week", formatDuration(totalActivityAll("week")))}
-        ${metricCard("Most Active Staff", mostActiveStaff())}
+      <div class="toolbar roblox-toolbar">
+        <div>
+          <p class="eyebrow">Activity</p>
+          <h2>Roblox & Staff Activity</h2>
+          <p>Track live game status, developer presence, active staff, and recent activity sessions in one place.</p>
+        </div>
+        <div class="inline-actions">
+          <span class="tag">${status.checkedAt ? `Checked ${formatDateTime(status.checkedAt)}` : "Checking Roblox"}</span>
+          <button class="accent-button" type="button" data-action="refresh-roblox" ${state.robloxLoading ? "disabled" : ""}>${state.robloxLoading ? "Refreshing" : "Refresh"}</button>
+        </div>
       </div>
+      <div class="dashboard-grid">
+        ${metricCard("Players Online", totalPlayers)}
+        ${metricCard("Team In Studio", studioCount)}
+        ${metricCard("Live Active Staff", active.length)}
+        ${metricCard("Total Hours This Week", formatDuration(totalActivityAll("week")))}
+      </div>
+      <section class="card dashboard-hero-card">
+        <div class="section-title">
+          <h2>Tracked Games</h2>
+          <span class="tag">${games.length} Experiences</span>
+        </div>
+        <div class="roblox-game-grid dashboard-roblox-grid">
+          ${games.map((game) => robloxGameCard(game)).join("")}
+        </div>
+      </section>
+      <div style="height:18px"></div>
       <div class="content-grid">
+        <section class="card">
+          <div class="section-title"><h2>Developer Presence</h2><span class="tag">${onlineCount} Online</span></div>
+          <div class="roblox-team-grid">
+            ${team.map((member) => robloxTeamCard(member)).join("")}
+          </div>
+        </section>
         <section class="card chart-card">
-          <div class="section-title"><h2>Weekly Activity</h2></div>
+          <div class="section-title"><h2>Weekly Activity</h2><span class="tag orange">${mostActiveStaff()}</span></div>
           <canvas id="activityChart" height="220"></canvas>
         </section>
+      </div>
+      <div style="height:18px"></div>
+      <div class="content-grid">
         <section class="card">
           <div class="section-title"><h2>Live Staff Status</h2></div>
           <div class="timeline">
@@ -644,6 +1247,15 @@
                 `,
               )
               .join("")}
+          </div>
+        </section>
+        <section class="card">
+          <div class="section-title"><h2>Activity Totals</h2></div>
+          <div class="metric-grid compact-metrics">
+            ${metricCard("Hours Today", formatDuration(totalActivityAll("today")))}
+            ${metricCard("Hours This Week", formatDuration(totalActivityAll("week")))}
+            ${metricCard("Sessions", state.data.activities.length)}
+            ${metricCard("Most Active", mostActiveStaff())}
           </div>
         </section>
       </div>
@@ -793,12 +1405,14 @@
           <div class="section-title"><h2>Portal Branding</h2></div>
           <form class="form-grid" id="settingsForm">
             <label>Portal Name<input name="portalName" value="${escapeAttr(branding.portalName)}" required /></label>
-            <label>Accent Color<input name="accentColor" type="color" value="${escapeAttr(branding.accentColor)}" required /></label>
+            <label>Background Color<input name="backgroundColor" type="color" value="${escapeAttr(branding.backgroundColor)}" required /></label>
+            <label>Text Color<input name="textColor" type="color" value="${escapeAttr(branding.textColor)}" required /></label>
+            <label>Button Color<input name="buttonColor" type="color" value="${escapeAttr(branding.buttonColor)}" required /></label>
             <div class="branding-preview wide">
               <img src="${escapeAttr(branding.logoUrl)}" alt="${escapeAttr(branding.portalName)} logo preview" />
               <div>
                 <span class="field-label">Current Logo</span>
-                <strong>${escapeHtml(branding.logoPath ? "Custom logo uploaded" : "Default Summer '26 logo")}</strong>
+                <strong>${escapeHtml(branding.logoPath ? "Custom logo uploaded" : "Default Outbound logo")}</strong>
               </div>
             </div>
             <label class="wide">Logo Upload<input name="logo" type="file" accept="image/*" /></label>
@@ -837,7 +1451,7 @@
       <section class="card">
         <div class="section-title"><h2>Roles & Permissions</h2></div>
         <div class="document-grid">
-          ${["Staff Management", "Activity Tracking", "Payout Updates", "Document Uploads", "Reports", "System Settings"]
+          ${["Staff", "Activity", "Document Uploads", "System Settings"]
             .map((permission) => `<div class="info-item"><span class="field-label">Permission</span><strong>${permission}</strong><p>Leadership only</p></div>`)
             .join("")}
         </div>
@@ -852,6 +1466,7 @@
     const id = trigger.dataset.id;
 
     if (action === "leadership-section") {
+      if (!leadershipSections.some(([section]) => section === trigger.dataset.section)) return;
       state.leadershipSection = trigger.dataset.section;
       state.leadershipDetailProfileId = null;
       renderLeadership();
@@ -867,6 +1482,9 @@
       renderLeadership();
       return;
     }
+    if (action === "refresh-roblox") return refreshRobloxStatus();
+    if (action === "refresh-terminal") return loadTerminalHistory(trigger.dataset.scope || "leadership");
+    if (action === "submit-terminal") return submitTerminalCommand(trigger.dataset.scope || "leadership");
     if (action === "start-activity") return startActivity();
     if (action === "end-activity") return endActivity();
     if (action === "open-document") return openDocument(id);
@@ -901,6 +1519,15 @@
     if (event.target.id === "statusFilter") {
       state.filterStatus = event.target.value;
       renderLeadership();
+    }
+  }
+
+  function handleDynamicSubmit(event) {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.matches(".terminal-input-row")) {
+      event.preventDefault();
+      submitTerminalCommand(form.dataset.terminalScope || "leadership");
     }
   }
 
@@ -1415,7 +2042,10 @@
       const nextBranding = normalizeBranding({
         ...state.settings,
         portalName: values.portalName,
-        accentColor: values.accentColor,
+        accentColor: values.buttonColor,
+        buttonColor: values.buttonColor,
+        backgroundColor: values.backgroundColor,
+        textColor: values.textColor,
       });
 
       if (file) {
@@ -1514,9 +2144,8 @@
       .slice()
       .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
     const paidRobux = totalPaid(context.payouts);
-    const detailTitle = state.leadershipSection === "contractors" ? "All Contractors" : "All Members";
+    const detailTitle = "All Members";
 
-    $("#leadershipTitle").textContent = profile.fullName;
     $("#leadershipContent").innerHTML = `
       <div class="member-detail-toolbar">
         <button class="member-back" type="button" data-action="back-to-members">&larr; ${detailTitle}</button>
@@ -1553,7 +2182,6 @@
       </section>
 
       <div class="member-action-grid">
-        ${memberActionTile("$", "Log Payment", "open-payout-form", profile.id)}
         ${memberActionTile("!", "Issue Strike", "issue-strike", profile.id)}
         ${memberActionTile("i", "Issue Warning", "issue-warning", profile.id)}
         ${memberActionTile("DOC", "Upload Doc", "open-document-form", profile.id)}
@@ -1746,7 +2374,7 @@
           .reduce((sum, session) => sum + sessionDuration(session), 0) / 60,
       );
     });
-    drawBars("activityChart", labels, values, "#e85002");
+    drawBars("activityChart", labels, values, state.settings.accentColor || DEFAULT_BRANDING.accentColor);
   }
 
   function drawPayoutChart() {
@@ -1780,7 +2408,7 @@
     const barGap = 12;
     const width = Math.max(16, (rect.width - left - 20 - barGap * (labels.length - 1)) / labels.length);
 
-    context.strokeStyle = "rgba(249,249,249,.12)";
+    context.strokeStyle = "rgba(15,23,42,.12)";
     context.beginPath();
     context.moveTo(left, 12);
     context.lineTo(left, bottom);
@@ -1795,11 +2423,11 @@
       context.fillStyle = color;
       roundRect(context, x, y, width, height, 6);
       context.fill();
-      context.fillStyle = "#f9f9f9";
+      context.fillStyle = "#101014";
       context.font = "600 12px Inter, sans-serif";
       context.textAlign = "center";
       context.fillText(String(value), x + width / 2, y - 8);
-      context.fillStyle = "#a7a7a7";
+      context.fillStyle = "#6b7280";
       context.font = "560 11px Inter, sans-serif";
       context.fillText(label, x + width / 2, bottom + 20);
     });
@@ -1917,6 +2545,9 @@
         openedAt: row.opened_at,
         completedAt: row.completed_at,
       })),
+      terminalCommands: [],
+      terminalLogs: [],
+      terminalBans: [],
       leadershipAccounts: (leaders.data || []).map((row) => ({
         id: row.user_id,
         name: row.name,
@@ -2126,11 +2757,28 @@
   function loadStore() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) return ensureStoreShape(JSON.parse(stored));
     } catch (error) {
       console.warn("Demo store could not be loaded.", error);
     }
-    return seedStore();
+    return ensureStoreShape(seedStore());
+  }
+
+  function ensureStoreShape(store) {
+    store.settings ||= { branding: { ...DEFAULT_BRANDING } };
+    store.profiles ||= [];
+    store.activities ||= [];
+    store.payouts ||= [];
+    store.discipline ||= [];
+    store.documents ||= [];
+    store.acknowledgements ||= [];
+    store.leadershipAccounts ||= [];
+    store.auditLogs ||= [];
+    store.terminalCommands ||= [];
+    store.terminalLogs ||= [];
+    store.terminalBans ||= [];
+    store.demoLeader ||= { email: "", passwordHash: "", salt: "" };
+    return store;
   }
 
   function saveStore() {
@@ -2167,7 +2815,7 @@
         id: "staff-avery",
         kind: "staff",
         fullName: "Avery Stone",
-        username: "AveryFRI",
+        username: "AveryOutbound",
         demoPin: "0426",
         pinSalt: "fri-avery",
         role: "Operations Coordinator",
@@ -2177,7 +2825,7 @@
         joinDate: "2025-08-12",
         status: "Active",
         activityStatus: "Offline",
-        notes: "Eligible for event lead rotations during the Summer '26 content drop.",
+        notes: "Eligible for leadership coverage during the current Outbound operations cycle.",
         notesVisible: true,
         profilePhoto: "",
       },
@@ -2185,7 +2833,7 @@
         id: "staff-milo",
         kind: "staff",
         fullName: "Milo Reyes",
-        username: "MiloFRI",
+        username: "MiloOutbound",
         demoPin: "2266",
         pinSalt: "fri-milo",
         role: "Community Moderator",
@@ -2203,8 +2851,8 @@
         id: "contractor-nova",
         kind: "contractor",
         fullName: "Nova Buildworks",
-        username: "FRI-C901",
-        contractorId: "FRI-C901",
+        username: "OUT-C901",
+        contractorId: "OUT-C901",
         demoPin: "9010",
         pinSalt: "fri-nova",
         role: "",
@@ -2245,9 +2893,9 @@
       documents: [
         {
           id: "doc-handbook",
-          title: "Summer '26 Staff Handbook",
+          title: "Outbound Staff Handbook",
           description: "Updated conduct, live operations, and escalation guidance for the current content cycle.",
-          fileName: "summer-26-handbook.pdf",
+          fileName: "outbound-handbook.pdf",
           fileUrl: "#",
           dueDate: "2026-06-07",
           completionRequired: true,
@@ -2271,6 +2919,22 @@
       acknowledgements: [
         { id: "ack-1", documentId: "doc-handbook", profileId: "staff-avery", openedAt: "2026-05-25T15:15:00.000Z", completedAt: "2026-05-25T15:19:00.000Z" },
       ],
+      terminalCommands: [
+        {
+          id: "term-1",
+          action: "kick",
+          robloxUsername: "ExamplePlayer",
+          rawCommand: "/kick ExamplePlayer",
+          status: "completed",
+          actorType: "leadership",
+          actorProfileId: "",
+          issuedBy: "Demo Leadership",
+          resultMessage: "Demo command completed",
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      terminalLogs: [],
+      terminalBans: [],
       leadershipAccounts: [{ id: "leader-1", name: "Demo Leadership", email: "leader@fri.local", role: "Director" }],
       demoLeader: {
         email: "leader@fri.local",
@@ -2292,6 +2956,9 @@
       discipline: [],
       documents: [],
       acknowledgements: [],
+      terminalCommands: [],
+      terminalLogs: [],
+      terminalBans: [],
       leadershipAccounts: [],
       demoLeader: {
         email: "",
@@ -2384,7 +3051,7 @@
 
   function initials(name) {
     return escapeHtml(
-      String(name || "FRI")
+      String(name || "OB")
         .split(/\s+/)
         .slice(0, 2)
         .map((part) => part[0] || "")

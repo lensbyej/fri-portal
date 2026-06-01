@@ -2,5 +2,6 @@ config.local.js
 .env
 .env.*
 !.env.example
+outbound-engine-key.txt
 .DS_Store
 Thumbs.db
